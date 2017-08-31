@@ -59,15 +59,17 @@ class ParserService
                 return $result;
             }
 
-            $gameDescription = $replay->initdata->m_syncLobbyState->m_gameDescription;
-            if ($duplicate = Replay::where('fingerprint', $gameDescription->m_randomValue)->first()) {
+            $fingerprint_v2 = $this->getFingerprint($replay);
+            $fingerprint_v1 = $replay->initdata->m_syncLobbyState->m_gameDescription->m_randomValue;
+            if ($duplicate = Replay::where('fingerprint', $fingerprint_v2)->first()) {
                 $result->status = self::STATUS_DUPLICATE;
                 $result->replay = $duplicate;
                 return $result;
             }
 
             $result->data = [
-                'fingerprint' => $gameDescription->m_randomValue,
+                'fingerprint' => $fingerprint_v2,
+                'fingerprint_old' => $fingerprint_v1,
                 'players' => []
             ];
 
@@ -76,7 +78,7 @@ class ParserService
 
             $result->data += [
                 // todo better duplicates detection
-                'game_type' => $this->DetectGameMode($gameDescription->m_gameOptions->m_ammId),
+                'game_type' => $this->DetectGameMode($replay->initdata->m_syncLobbyState->m_gameDescription->m_gameOptions->m_ammId),
                 'game_date' => $this->FiletimeToDatetime($replay->details->m_timeUTC),
                 'game_length' => (int)($replay->header->m_elapsedGameLoops / 16),
                 'game_map' => $replay->details->m_title,
@@ -121,7 +123,7 @@ class ParserService
                 }
             }
 
-            if (count($result->data['players']) <= 5 || $gameDescription->m_maxUsers != 10) {
+            if (count($result->data['players']) <= 5 || $replay->initdata->m_syncLobbyState->m_gameDescription->m_maxUsers != 10) {
                 $result->status = self::STATUS_AI_DETECTED;
                 return $result;
             }
@@ -189,6 +191,47 @@ class ParserService
                 Log::error("Unknown game type: '$gameModeId'");
                 return self::GAME_TYPE_UNKNOWN;
         }
+    }
+
+    /**
+     * Get unique hash of replay. Compatible with HotsLogs
+     *
+     * @param $replay
+     * @return string
+     */
+    public function getFingerprint($replay)
+    {
+        try {
+            $ids = collect($replay->details->m_playerList)->map->m_toon->map->m_id->sort();
+            $string = implode('', $ids->toArray()) . $replay->initdata->m_syncLobbyState->m_gameDescription->m_randomValue;
+            $hash = md5($string, true);
+            $guid = $this->bytesToGuid($hash);
+            return $guid;
+        } catch (\Exception $e) {
+            Log::error($e, "Error getting replay fingerprint");
+            return null;
+        }
+
+    }
+
+    /**
+     * Transform byte string to a windows GUID
+     *
+     * @param $bytes
+     * @return string
+     */
+    public function bytesToGuid($bytes)
+    {
+        $guid_byte_order = [3, 2, 1, 0, 5, 4, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15];
+        $dash_positions = [3, 5, 7, 9];
+        $result = "";
+        for ($i = 0; $i < 16; $i++) {
+            $result = sprintf($result . "%02x", ord($bytes[$guid_byte_order[$i]]));
+            if (in_array($i, $dash_positions)) {
+                $result .= "-";
+            }
+        }
+        return $result;
     }
 
     /**
