@@ -44,7 +44,7 @@ class Replay extends Model
      * @var array
      */
     protected $guarded = ['id', 'filename', 'size', 'created_at', 'updated_at', 'players'];
-    protected $hidden = ['created_at', 'updated_at', 'fingerprint', 'fingerprint_old'];
+    protected $hidden = ['created_at', 'updated_at', 'fingerprint_old'];
     protected $appends = ['url'];
     protected $dates = [
         'created_at',
